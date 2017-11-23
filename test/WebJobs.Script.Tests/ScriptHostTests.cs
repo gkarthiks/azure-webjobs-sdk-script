@@ -671,23 +671,6 @@ namespace Microsoft.Azure.WebJobs.Script.Tests
         }
 
         [Fact]
-        public void ApplyConfiguration_HostHealthMonitor()
-        {
-            JObject config = new JObject();
-            config["id"] = ID;
-
-            ScriptHostConfiguration scriptConfig = new ScriptHostConfiguration();
-            Assert.True(scriptConfig.HostHealthMonitorEnabled);
-
-            ScriptHost.ApplyConfiguration(config, scriptConfig);
-            Assert.True(scriptConfig.HostHealthMonitorEnabled);
-
-            config["hostHealthMonitorEnabled"] = new JValue(false);
-            ScriptHost.ApplyConfiguration(config, scriptConfig);
-            Assert.False(scriptConfig.HostHealthMonitorEnabled);
-        }
-
-        [Fact]
         public void ApplyConfiguration_FileWatching()
         {
             JObject config = new JObject();
@@ -926,6 +909,53 @@ namespace Microsoft.Azure.WebJobs.Script.Tests
 
             Assert.NotNull(scriptConfig.ApplicationInsightsSamplingSettings);
             Assert.Equal(25, scriptConfig.ApplicationInsightsSamplingSettings.MaxTelemetryItemsPerSecond);
+        }
+
+        [Fact]
+        public void ApplyHostHealthMonitorConfig_AppliesExpectedSettings()
+        {
+            JObject config = JObject.Parse("{ }");
+
+            ScriptHostConfiguration scriptConfig = new ScriptHostConfiguration();
+            ScriptHost.ApplyConfiguration(config, scriptConfig);
+
+            Assert.True(scriptConfig.HostHealthMonitor.Enabled);
+            Assert.Equal(TimeSpan.FromSeconds(15), scriptConfig.HostHealthMonitor.HealthCheckInterval);
+            Assert.Equal(TimeSpan.FromMinutes(15), scriptConfig.HostHealthMonitor.HealthCheckWindow);
+            Assert.Equal(30, scriptConfig.HostHealthMonitor.HealthCheckThreshold);
+            Assert.Equal(HostHealthMonitorConfiguration.DefaultCounterThreshold, scriptConfig.HostHealthMonitor.CounterThreshold);
+
+            // now set custom configuration and verify
+            config = JObject.Parse(@"
+            {
+                'healthMonitor': {
+                    'enabled': false
+                }   
+            }");
+            scriptConfig = new ScriptHostConfiguration();
+            ScriptHost.ApplyConfiguration(config, scriptConfig);
+
+            Assert.False(scriptConfig.HostHealthMonitor.Enabled);
+
+            config = JObject.Parse(@"
+            {
+                'healthMonitor': {
+                    'enabled': true,
+                    'healthCheckInterval': '00:00:07',
+                    'healthCheckWindow': '00:07:00',
+                    'healthCheckThreshold': 77,
+                    'counterThreshold': 0.77
+                }
+                
+            }");
+            scriptConfig = new ScriptHostConfiguration();
+            ScriptHost.ApplyConfiguration(config, scriptConfig);
+
+            Assert.True(scriptConfig.HostHealthMonitor.Enabled);
+            Assert.Equal(TimeSpan.FromSeconds(7), scriptConfig.HostHealthMonitor.HealthCheckInterval);
+            Assert.Equal(TimeSpan.FromMinutes(7), scriptConfig.HostHealthMonitor.HealthCheckWindow);
+            Assert.Equal(77, scriptConfig.HostHealthMonitor.HealthCheckThreshold);
+            Assert.Equal(0.77F, scriptConfig.HostHealthMonitor.CounterThreshold);
         }
 
         [Fact]

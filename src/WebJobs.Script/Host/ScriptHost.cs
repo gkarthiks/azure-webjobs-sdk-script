@@ -48,7 +48,7 @@ namespace Microsoft.Azure.WebJobs.Script
         private static readonly string[] WellKnownHostJsonProperties = new[]
         {
             "id", "functionTimeout", "http", "watchDirectories", "functions", "queues", "serviceBus",
-            "eventHub", "tracing", "singleton", "logger", "aggregator", "applicationInsights"
+            "eventHub", "tracing", "singleton", "logger", "aggregator", "applicationInsights", "healthMonitor"
         };
 
         private string _instanceId;
@@ -1401,12 +1401,6 @@ namespace Microsoft.Azure.WebJobs.Script
                 }
             }
 
-            JToken hostHealthMonitorEnabled = (JToken)config["hostHealthMonitorEnabled"];
-            if (hostHealthMonitorEnabled != null && hostHealthMonitorEnabled.Type == JTokenType.Boolean)
-            {
-                scriptConfig.HostHealthMonitorEnabled = (bool)hostHealthMonitorEnabled;
-            }
-
             // Apply Singleton configuration
             JObject configSection = (JObject)config["singleton"];
             JToken value = null;
@@ -1434,8 +1428,33 @@ namespace Microsoft.Azure.WebJobs.Script
                 }
             }
 
-            // Apply Tracing/Logging configuration
-            configSection = (JObject)config["tracing"];
+            // Apply Host Health Montitor configuration
+            configSection = (JObject)config["healthMonitor"];
+            value = null;
+            if (configSection != null)
+            {
+                if (configSection.TryGetValue("enabled", out value) && value.Type == JTokenType.Boolean)
+                {
+                    scriptConfig.HostHealthMonitor.Enabled = (bool)value;
+                }
+                if (configSection.TryGetValue("healthCheckInterval", out value))
+                {
+                    scriptConfig.HostHealthMonitor.HealthCheckInterval = TimeSpan.Parse((string)value, CultureInfo.InvariantCulture);
+                }
+                if (configSection.TryGetValue("healthCheckWindow", out value))
+                {
+                    scriptConfig.HostHealthMonitor.HealthCheckWindow = TimeSpan.Parse((string)value, CultureInfo.InvariantCulture);
+                }
+                if (configSection.TryGetValue("healthCheckThreshold", out value))
+                {
+                    scriptConfig.HostHealthMonitor.HealthCheckThreshold = (int)value;
+                }
+                if (configSection.TryGetValue("counterThreshold", out value))
+                {
+                    scriptConfig.HostHealthMonitor.CounterThreshold = (float)value;
+                }
+            }
+
             if (configSection != null)
             {
                 if (configSection.TryGetValue("consoleLevel", out value))

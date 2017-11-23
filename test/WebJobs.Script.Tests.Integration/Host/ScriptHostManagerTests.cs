@@ -301,10 +301,10 @@ namespace Microsoft.Azure.WebJobs.Script.Tests
             bool isAzureEnvironment = false;
             mockSettings.Setup(p => p.IsAzureEnvironment).Returns(() => isAzureEnvironment);
 
-            config.HostHealthMonitorEnabled = false;
+            config.HostHealthMonitor.Enabled = false;
             Assert.True(target.Object.IsHostHealthy());
 
-            config.HostHealthMonitorEnabled = true;
+            config.HostHealthMonitor.Enabled = true;
             Assert.True(target.Object.IsHostHealthy());
 
             isAzureEnvironment = true;

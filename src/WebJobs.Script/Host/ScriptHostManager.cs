@@ -34,7 +34,7 @@ namespace Microsoft.Azure.WebJobs.Script
         private readonly StructuredLogWriter _structuredLogWriter;
         private readonly HostPerformanceManager _performanceManager;
         private readonly Timer _hostHealthCheckTimer;
-        private readonly TimeSpan hostHealthCheckInterval = TimeSpan.FromSeconds(15);
+        private readonly SlidingWindow<bool> _healthCheckWindow;
         private ScriptHost _currentInstance;
         private int _hostStartCount;
 
@@ -92,19 +92,29 @@ namespace Microsoft.Azure.WebJobs.Script
             EventManager = eventManager ?? new ScriptEventManager();
 
             _structuredLogWriter = new StructuredLogWriter(EventManager, config.RootLogPath);
-            _performanceManager = hostPerformanceManager ?? new HostPerformanceManager(settingsManager);
+            _performanceManager = hostPerformanceManager ?? new HostPerformanceManager(settingsManager, _config.HostHealthMonitor);
 
-            // TEMP : temporarily disabling this until the feature is improved
-            bool periodicHealthCheckEnabled = false;
-            if (periodicHealthCheckEnabled && config.HostHealthMonitorEnabled && settingsManager.IsAzureEnvironment)
+            if (ShouldMonitorHostHealth)
             {
-                _hostHealthCheckTimer = new Timer(OnHostHealthCheckTimer, null, TimeSpan.Zero, hostHealthCheckInterval);
+                _hostHealthCheckTimer = new Timer(OnHostHealthCheckTimer, null, TimeSpan.Zero, _config.HostHealthMonitor.HealthCheckInterval);
+                _healthCheckWindow = new SlidingWindow<bool>(_config.HostHealthMonitor.HealthCheckWindow);
             }
         }
 
         protected HostPerformanceManager PerformanceManager => _performanceManager;
 
         protected IScriptEventManager EventManager { get; }
+
+        /// <summary>
+        /// Gets a value indicating whether the host health monitor should be active.
+        /// </summary>
+        private bool ShouldMonitorHostHealth
+        {
+            get
+            {
+                return _config.HostHealthMonitor.Enabled && _settingsManager.IsAzureEnvironment;
+            }
+        }
 
         public virtual ScriptHost Instance
         {
@@ -228,6 +238,11 @@ namespace Microsoft.Azure.WebJobs.Script
                     _traceWriter?.Error(message, ex);
                     _logger?.LogError(0, ex, message);
 
+                    if (RestartHostIfUnhealthy())
+                    {
+                        break;
+                    }
+
                     // If a ScriptHost instance was created before the exception was thrown
                     // Orphan and cleanup that instance.
                     if (newInstance != null)
@@ -247,6 +262,23 @@ namespace Microsoft.Azure.WebJobs.Script
                 }
             }
             while (!_stopped && !cancellationToken.IsCancellationRequested);
+        }
+
+        private bool RestartHostIfUnhealthy()
+        {
+            if (!IsHostHealthy() && _healthCheckWindow.GetEvents(isHealthy => !isHealthy).Count() > _config.HostHealthMonitor.HealthCheckThreshold)
+            {
+                // if the number of times the host has been unhealthy in
+                // the current time window exceeds the threshold, recover by
+                // initiating shutdown
+                var message = $"Host unhealthy count exceeds the threshold of {_config.HostHealthMonitor.HealthCheckThreshold} for time window {_config.HostHealthMonitor.HealthCheckWindow}. Initiating shutdown.";
+                _traceWriter?.Error(message);
+                _logger?.LogError(0, message);
+                Shutdown();
+                return true;
+            }
+
+            return false;
         }
 
         private void OnHostInitialized(object sender, EventArgs e)
@@ -422,6 +454,8 @@ namespace Microsoft.Azure.WebJobs.Script
         /// </summary>
         protected virtual void OnCreatingHost()
         {
+            // we check host health before starting to avoid starting
+            // the host when connection or other issues exist
             IsHostHealthy(throwWhenUnhealthy: true);
         }
 
@@ -481,7 +515,10 @@ namespace Microsoft.Azure.WebJobs.Script
 
         private void OnHostHealthCheckTimer(object state)
         {
-            if (State == ScriptHostState.Running && !IsHostHealthy())
+            bool isHealthy = IsHostHealthy();
+            _healthCheckWindow.AddEvent(isHealthy);
+
+            if (!isHealthy && State == ScriptHostState.Running)
             {
                 // This periodic check allows us to break out of the host run
                 // loop. The health check performed in OnHostStarting will then
@@ -493,7 +530,7 @@ namespace Microsoft.Azure.WebJobs.Script
 
         internal bool IsHostHealthy(bool throwWhenUnhealthy = false)
         {
-            if (!_config.HostHealthMonitorEnabled || !_settingsManager.IsAzureEnvironment)
+            if (!ShouldMonitorHostHealth)
             {
                 return true;
             }

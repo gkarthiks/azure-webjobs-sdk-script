@@ -465,6 +465,7 @@ namespace Microsoft.Azure.WebJobs.Script
                 var configFactory = new WorkerConfigFactory(ScriptSettingsManager.Instance.Configuration, _startupLogger);
                 var workerConfigs = configFactory.GetConfigs(new List<IWorkerProvider>()
                 {
+                    new GolangWorkerProvider(),
                     new NodeWorkerProvider(),
                     new JavaWorkerProvider()
                 });

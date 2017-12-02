@@ -13,7 +13,6 @@ RUN dotnet publish src/WebJobs.Script.WebHost/WebJobs.Script.WebHost.csproj --ou
 FROM microsoft/dotnet:2.0.0-runtime-jessie
 
 COPY --from=installer-env ["/azure-functions-runtime", "/azure-functions-runtime"]
-COPY golang-worker /azure-functions-runtime/workers/go/
 
 ENV AzureWebJobsScriptRoot=/app
 
